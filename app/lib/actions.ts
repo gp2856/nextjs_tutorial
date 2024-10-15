@@ -17,28 +17,6 @@ const FormSchema = z.object({
     date: z.string(),
 });
 
-const UpdateInvoice = FormSchema.omit({ id: true, date: true });
-export async function updateInvoice(id: string, formData: FormData) {
-    try{
-        const { customerId, amount ,status } = UpdateInvoice.parse({
-            customerId: formData.get('customerId') as string,
-            amount: Number(formData.get('amount')),
-            status: formData.get('status') as 'pending' | 'paid',
-        });
-        const amountInCents = amount * 100;
-        await sql`
-        UPDATE invoices
-        SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}
-        WHERE id = ${id}
-        `;
-        revalidatePath('/dashboard/invoices');
-        redirect('/dashboard/invoices');
-    } catch (error) {
-        console.error('Error updating invoice:', error);
-        throw error;
-    }
-}
-
 export type State = {
     errors?: {
         customerId?: string[];
@@ -47,6 +25,39 @@ export type State = {
     }
     message?: string | null;
 };
+
+const UpdateInvoice = FormSchema.omit({ id: true, date: true });
+export async function updateInvoice(
+        id: string,
+        prevState: State,
+        formData: FormData
+) {
+        const ValidatedFields = UpdateInvoice.safeParse({
+            customerId: formData.get('customerId') as string,
+            amount: Number(formData.get('amount')),
+            status: formData.get('status') as 'pending' | 'paid',
+        });
+        
+        if (!ValidatedFields.success) {
+            return { errors: ValidatedFields.error.flatten().fieldErrors, message: 'Missing fields.  Failed to update invoice.'}
+        }
+
+        const { customerId, amount, status } = ValidatedFields.data;
+        const amountInCents = amount * 100;
+
+            try{
+                await sql`
+                UPDATE invoices
+                SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}
+                WHERE id = ${id}
+                `;
+                revalidatePath('/dashboard/invoices');
+                redirect('/dashboard/invoices');
+            } catch (error) {
+                return { errors: { message: 'Database Error updating invoice'}, message: 'Error updating invoice'};
+            }
+}
+
 
 const CreateInvoice = FormSchema.omit({ id: true, date: true });
 export async function createInvoice(prevState: State, formData: FormData) {
